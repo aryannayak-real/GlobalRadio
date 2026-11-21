@@ -40,6 +40,7 @@ import androidx.media3.session.SessionToken
 import coil.compose.AsyncImage
 import com.aryannayak.globalradio.data.*
 import com.aryannayak.globalradio.player.RadioPlaybackService
+import com.aryannayak.globalradio.ui.home.HomeScreen
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.collect
 import java.util.concurrent.Executor
@@ -194,7 +195,7 @@ fun GlobalRadioApp() {
     }
 
     LaunchedEffect(tab) {
-        if (tab == "Explore" && countries.isEmpty()) {
+        if ((tab == "Explore" || tab == "Home") && countries.isEmpty()) {
             try {
                 countries = RadioApi.countries()
             } catch (_: Exception) {
@@ -367,193 +368,174 @@ fun GlobalRadioApp() {
             }
 
             if (tab == "Home") {
-                Spacer(Modifier.height(14.dp))
+                HomeScreen(
+                    modifier = Modifier.weight(1f),
+                    stations = stations,
+                    recentStations = history.map { it.toStation() },
+                    countries = countries,
+                    favoriteIds = favorites.map { it.stationUuid }.toSet(),
+                    loading = loading,
+                    error = error,
+                    onPlay = { playStation(it) },
+                    onFavorite = { station ->
+                        scope.launch {
+                            if (favorites.any {
+                                it.stationUuid == station.id
+                            }) {
+                                dao.removeFavorite(station.id)
+                            } else {
+                                dao.addFavorite(station.toEntity())
+                            }
+                        }
+                    },
+                    onCountry = { country ->
+                        tab = "Explore"
+                        load { RadioApi.byCountry(country.code) }
+                    },
+                    onGenre = { genre ->
+                        tab = "Explore"
+                        load { RadioApi.byTag(genre) }
+                    },
+                    onSeeAll = {
+                        tab = "Explore"
+                        load { RadioApi.top() }
+                    }
+                )
+            } else {
+                if (tab == "Explore") {
+                    Text(
+                        "COUNTRIES",
+                        color = Muted,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(
+                            start = 20.dp, top = 14.dp, bottom = 8.dp
+                        )
+                    )
 
-                Card(
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(countries.take(30), key = { it.code }) { country ->
+                            FilterChip(
+                                selected = false,
+                                onClick = {
+                                    load { RadioApi.byCountry(country.code) }
+                                },
+                                label = {
+                                    Text("${country.name} · ${country.stationCount}")
+                                }
+                            )
+                        }
+                    }
+
+                    Text(
+                        "GENRES",
+                        color = Muted,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(
+                            start = 20.dp, top = 12.dp, bottom = 8.dp
+                        )
+                    )
+
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(
+                            listOf(
+                                "Pop", "Rock", "Jazz", "Classical",
+                                "Electronic", "News", "Sports", "Talk"
+                            )
+                        ) { genre ->
+                            FilterChip(
+                                selected = false,
+                                onClick = {
+                                    load { RadioApi.byTag(genre) }
+                                },
+                                label = { Text(genre) }
+                            )
+                        }
+                    }
+                }
+
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                    shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = Panel
-                    )
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(
-                                Brush.linearGradient(
-                                    listOf(
-                                        Color(0xFF29204D),
-                                        Color(0xFF153B43),
-                                        Color(0xFF171D2C)
-                                    )
-                                )
-                            )
-                            .padding(20.dp)
-                    ) {
-                        Column {
-                            Text(
-                                "ONE WORLD. EVERY RADIO.",
-                                color = Mint,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 1.5.sp
-                            )
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                "Listen beyond\nborders.",
-                                fontSize = 29.sp,
-                                lineHeight = 35.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                "Discover live stations from around the globe.",
-                                color = Color.LightGray
-                            )
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(16.dp))
-            }
-
-            if (tab == "Explore") {
-                Text(
-                    "COUNTRIES",
-                    color = Muted,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(
-                        start = 20.dp, top = 14.dp, bottom = 8.dp
+                    Text(
+                        when (tab) {
+                            "Explore" -> "Discover stations"
+                            "Favorites" -> "Saved stations"
+                            else -> "Listening history"
+                        },
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 19.sp,
+                        modifier = Modifier.weight(1f)
                     )
-                )
 
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(countries.take(30), key = { it.code }) { country ->
-                        FilterChip(
-                            selected = false,
-                            onClick = {
-                                load { RadioApi.byCountry(country.code) }
-                            },
-                            label = {
-                                Text("${country.name} · ${country.stationCount}")
-                            }
+                    if (loading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                            color = Accent
                         )
                     }
                 }
 
-                Text(
-                    "GENRES",
-                    color = Muted,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(
-                        start = 20.dp, top = 12.dp, bottom = 8.dp
+                if (error.isNotBlank()) {
+                    Text(
+                        error,
+                        color = Color(0xFFFF9A9A),
+                        modifier = Modifier.padding(horizontal = 20.dp)
                     )
-                )
+                }
 
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                if (!loading && visibleStations.isEmpty() && error.isBlank()) {
+                    Text(
+                        "Nothing here yet.",
+                        color = Muted,
+                        modifier = Modifier.padding(20.dp)
+                    )
+                }
+
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(
+                        start = 16.dp,
+                        end = 16.dp,
+                        bottom = 20.dp
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     items(
-                        listOf(
-                            "Pop", "Rock", "Jazz", "Classical",
-                            "Electronic", "News", "Sports", "Talk"
-                        )
-                    ) { genre ->
-                        FilterChip(
-                            selected = false,
-                            onClick = {
-                                load { RadioApi.byTag(genre) }
+                        visibleStations,
+                        key = { it.id.ifBlank { it.streamUrl } }
+                    ) { station ->
+                        StationCard(
+                            station = station,
+                            favorite = favorites.any {
+                                it.stationUuid == station.id
                             },
-                            label = { Text(genre) }
-                        )
-                    }
-                }
-            }
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    when (tab) {
-                        "Home" -> "Popular stations"
-                        "Explore" -> "Discover stations"
-                        "Favorites" -> "Saved stations"
-                        else -> "Listening history"
-                    },
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 19.sp,
-                    modifier = Modifier.weight(1f)
-                )
-
-                if (loading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                        color = Accent
-                    )
-                }
-            }
-
-            if (error.isNotBlank()) {
-                Text(
-                    error,
-                    color = Color(0xFFFF9A9A),
-                    modifier = Modifier.padding(horizontal = 20.dp)
-                )
-            }
-
-            if (!loading && visibleStations.isEmpty() && error.isBlank()) {
-                Text(
-                    "Nothing here yet.",
-                    color = Muted,
-                    modifier = Modifier.padding(20.dp)
-                )
-            }
-
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(
-                    start = 16.dp,
-                    end = 16.dp,
-                    bottom = 20.dp
-                ),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                items(
-                    visibleStations,
-                    key = { it.id.ifBlank { it.streamUrl } }
-                ) { station ->
-                    StationCard(
-                        station = station,
-                        favorite = favorites.any {
-                            it.stationUuid == station.id
-                        },
-                        onPlay = { playStation(station) },
-                        onFavorite = {
-                            scope.launch {
-                                if (favorites.any {
-                                    it.stationUuid == station.id
-                                }) {
-                                    dao.removeFavorite(station.id)
-                                } else {
-                                    dao.addFavorite(station.toEntity())
+                            onPlay = { playStation(station) },
+                            onFavorite = {
+                                scope.launch {
+                                    if (favorites.any {
+                                        it.stationUuid == station.id
+                                    }) {
+                                        dao.removeFavorite(station.id)
+                                    } else {
+                                        dao.addFavorite(station.toEntity())
+                                    }
                                 }
                             }
-                        }
-                    )
+                        )
+                    }
                 }
             }
         }
